@@ -14,11 +14,12 @@ The MSSQL ATTACK TOOL (M.A.T) is a C# tool for fast discovery and exploitation o
 
 - **SPN Discovery** - Discover MSSQL instances in the domain via SPN queries (no server required)
 - **Reconnaissance** - Automatic checks: login info, group memberships, linked servers, impersonation privileges, SQL logins enumeration
-- **Four command execution techniques:**
+- **Five command execution techniques:**
   - `xp_cmdshell` (local + linked servers, single/double/triple link)
   - `sp_OACreate` / OLE Automation Procedures (local + linked servers, blind execution)
-  - CLR Assembly custom stored procedure (local, with OPSEC-safe randomized names)
+  - CLR Assembly custom stored procedure (local + linked servers, with OPSEC-safe randomized names)
   - `sp_execute_external_script` Python external script (local + linked servers)
+  - SQL Agent Job via `sp_start_job` (local + linked servers, blind execution, bypasses xp_cmdshell triggers)
 - **Windows Integrated, SQL, and Azure AD Authentication**
 - **PowerShell base64 encoding** (`-enc`) for evasion
 - **NTLM relay** via `xp_dirtree` UNC path injection (local + linked servers)
@@ -28,6 +29,7 @@ The MSSQL ATTACK TOOL (M.A.T) is a C# tool for fast discovery and exploitation o
 - **Linked server multi-hop** - 1-hop, 2-hop (double link), 3-hop recon and command execution
 - **RPC OUT management** - Automatic check and enable for linked server operations
 - **Hash dumping** - Dump MSSQL user hashes (requires sysadmin)
+- **Linked server password extraction** - Extract credentials from linked server configurations (`--dump-linked-pw`)
 - **Post-execution cleanup** - Automatically disables enabled features (xp_cmdshell, OLE Automation, CLR) after use (can be skipped with `--no-cleanup`)
 - **Output logging** - Log all output to file with `--output`
 - **Quiet mode** - Suppress banner with `--quiet`
@@ -66,7 +68,8 @@ If no `-u` / `-p` is provided, Windows Integrated Authentication is used by defa
   --double-link          Execute OS command via double link (value = command)
   --stoprox              Execute OS command via CLR stored procedure (legacy, same as --cmdtech 3)
   --dumphashes           Dump MSSQL user hashes (requires sysadmin)
-  --cmdtech              Execution technique: 1=xp_cmdshell (default), 2=sp_OACreate, 3=CLR assembly, 4=External Script
+  --dump-linked-pw       Extract linked server credentials (requires sysadmin + DAC)
+  --cmdtech              Execution technique: 1=xp_cmdshell (default), 2=sp_OACreate, 3=CLR assembly, 4=External Script, 5=Agent Job (blind)
   --encode-ps            Encode command as base64 PowerShell (-enc) for AV evasion
   --azure-domain         Azure AD domain (enables Azure auth, requires -u and -p)
   --no-cleanup           Skip post-execution cleanup (don't disable features after use)
@@ -184,9 +187,29 @@ MAT.exe --server localhost -l LINKED01 --linked-query "SELECT name FROM sys.data
 MAT.exe --server localhost --os-command "whoami" --no-cleanup
 ```
 
+### OS command via SQL Agent Job (blind, bypasses xp_cmdshell triggers)
+```
+MAT.exe --server localhost --os-command "whoami" --cmdtech 5
+```
+
+### SQL Agent Job on linked server
+```
+MAT.exe --server localhost -l LINKED01 --os-command "whoami" --cmdtech 5
+```
+
+### CLR Assembly on linked server
+```
+MAT.exe --server localhost -l LINKED01 --os-command "whoami" --cmdtech 3
+```
+
 ### Dump MSSQL user hashes
 ```
 MAT.exe --server localhost --dumphashes
+```
+
+### Extract linked server credentials
+```
+MAT.exe --server localhost --dump-linked-pw
 ```
 
 ### Log output to file
@@ -210,8 +233,9 @@ MAT.exe --server localhost --os-command "whoami" --quiet
 |-----------|:-----------:|:------:|:-----:|:------:|-------------|
 | xp_cmdshell | 1 (default) | Yes | Yes | Yes | Standard, returns command output |
 | sp_OACreate | 2 | No (blind) | Yes | Yes | OLE Automation, no output returned |
-| CLR Assembly | 3 | Yes | Yes | No | Custom .NET stored procedure, randomized names |
+| CLR Assembly | 3 | Yes | Yes | Yes | Custom .NET stored procedure, randomized names |
 | External Script | 4 | Yes | Yes | Yes | Python via sp_execute_external_script |
+| SQL Agent Job | 5 | No (blind) | Yes | Yes | Bypasses xp_cmdshell triggers, auto-deletes job |
 
 ## Scenario Walkthrough
 
